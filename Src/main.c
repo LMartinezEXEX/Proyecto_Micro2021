@@ -83,25 +83,25 @@ int main(void)
 
 	/* QUEUE INITALIZATION */
 
-	xHR_to_Comm_Queue = xQueueCreate(10, sizeof(uint8_t));
-	xHRManager_to_Comm_Queue = xQueueCreate(10, sizeof(action_TypeDef));
-	xNewCodeSav_to_Comm_Queue = xQueueCreate(10, sizeof(uint32_t));
-	xReceiver_to_Comm_Queue = xQueueCreate(10, sizeof(userConfig_TypeDef));
+	xHR_to_Comm_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(uint8_t));
+	xHRManager_to_Comm_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(action_TypeDef));
+	xNewCodeSav_to_Comm_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(uint32_t));
+	xReceiver_to_Comm_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(userConfig_TypeDef));
 
-	xCommQueueSet = xQueueCreateSet(4 * 10);
+	xCommQueueSet = xQueueCreateSet(4 * QUEUE_DEFAULT_SIZE);
 
 	xQueueAddToSet(xHR_to_Comm_Queue, xCommQueueSet);
 	xQueueAddToSet(xHRManager_to_Comm_Queue, xCommQueueSet);
 	xQueueAddToSet(xNewCodeSav_to_Comm_Queue, xCommQueueSet);
 	xQueueAddToSet(xReceiver_to_Comm_Queue, xCommQueueSet);
 
-	xHR_to_HRManager_Queue = xQueueCreate(10, sizeof(uint8_t));
-	xHRManager_to_CodeManager_Queue = xQueueCreate(10, sizeof(action_TypeDef));
-	xCodeManager_to_AudioCommander_Queue = xQueueCreate(10, sizeof(uint32_t));
+	xHR_to_HRManager_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(uint8_t));
+	xHRManager_to_CodeManager_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(action_TypeDef));
+	xCodeManager_to_AudioCommander_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(uint32_t));
 
-	xReciever_Queue = xQueueCreate(10, sizeof(receive_message_TypeDef));
+	xReciever_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(receive_message_TypeDef));
 
-	xReceiver_to_NewCodeSav_Queue = xQueueCreate(10, sizeof(BaseType_t));
+	xReceiver_to_NewCodeSav_Queue = xQueueCreate(QUEUE_DEFAULT_SIZE, sizeof(BaseType_t));
 
 
 	if (	xHR_to_Comm_Queue == NULL || xHRManager_to_Comm_Queue == NULL || xCommQueueSet == NULL ||
@@ -184,7 +184,13 @@ void vPeriodic_get_HR(void *pvParameters){
 	uint8_t ucHR;
 
 	for(;;){
-		ucHR = DHT11_getHR();
+
+		vTaskSuspendAll();
+		{
+			ucHR = DHT11_getHR();
+		}
+		xTaskResumeAll();
+
 
 
 		xQueueSendToBack(xHR_to_Comm_Queue, &ucHR, 0);
@@ -200,45 +206,47 @@ void vCONSOLE_SerialPrint(void *pvParameters) {
 	QueueSetMemberHandle_t xHandle;
 
 	uint8_t ucHR;
-	uint8_t pucHrBuf[15], pucActionBuf[20], pucResponseBuf[80], pucConfigBuf[30];
+	uint8_t pucPrintBuf[80];
 	action_TypeDef xAction;
 	uint32_t ulIR_Code;
 	userConfig_TypeDef xConfig;
-	BaseType_t xPrintCodes;
+	BaseType_t xPrintCodes, xWaitingResponse;
 
 	for(;;){
 
 		xHandle = xQueueSelectFromSet(xCommQueueSet, portMAX_DELAY);
 
-		if( xHandle == (QueueSetMemberHandle_t) xHR_to_Comm_Queue) {
+		xWaitingResponse = xQueuePeek((QueueHandle_t) xWaitingResponseSem, (void *) NULL, (TickType_t) NULL) == pdTRUE;
+
+		if( xHandle == (QueueSetMemberHandle_t) xHR_to_Comm_Queue && !xWaitingResponse) {
 			xQueueReceive(xHandle, &ucHR, 0);
 
-			sprintf(pucHrBuf, "HR es: %u\r\n", ucHR);
-			CONSOLE_SendMessage(pucHrBuf, strlen((char *) pucHrBuf));
+			sprintf(pucPrintBuf, "HR es: %u%%\r\n", ucHR);
+			CONSOLE_SendMessage(pucPrintBuf, strlen((char *) pucPrintBuf));
 		}
-		else if (xHandle == (QueueSetMemberHandle_t) xHRManager_to_Comm_Queue){
+		else if (xHandle == (QueueSetMemberHandle_t) xHRManager_to_Comm_Queue && !xWaitingResponse){
 			xQueueReceive(xHandle, &xAction, 0);
 
 			switch(xAction){
 			case HR_UP:
-				memcpy(pucActionBuf, "La HR% subio!\r\n", sizeof("La HR% subio!\r\n"));
+				memcpy(pucPrintBuf, "La HR% subio!\r\n", sizeof("La HR% subio!\r\n"));
 				break;
 
 			case HR_DOWN:
-				memcpy(pucActionBuf, "La HR% bajo!\r\n", sizeof("La HR% bajo!\r\n"));
+				memcpy(pucPrintBuf, "La HR% bajo!\r\n", sizeof("La HR% bajo!\r\n"));
 				break;
 
 			default:
 				break;
 			}
 
-			CONSOLE_SendMessage(pucActionBuf, strlen((char *) pucActionBuf));
+			CONSOLE_SendMessage(pucPrintBuf, strlen((char *) pucPrintBuf));
 		}
 		else if(xHandle == (QueueSetMemberHandle_t) xNewCodeSav_to_Comm_Queue){
 			xQueueReceive(xHandle, &ulIR_Code, 0);
 
-			sprintf(pucResponseBuf, "Codigo: %lu, envia Y para guardar o otra para descartar\r\n", ulIR_Code);
-			CONSOLE_SendMessage(pucResponseBuf, strlen((char *) pucResponseBuf));
+			sprintf(pucPrintBuf, "Codigo: %lu, envia Y para guardar o otra para descartar\r\n", ulIR_Code);
+			CONSOLE_SendMessage(pucPrintBuf, strlen((char *) pucPrintBuf));
 		}
 		else if(xHandle == (QueueSetMemberHandle_t) xReceiver_to_Comm_Queue){
 			xQueueReceive(xHandle, &xConfig, 0);
@@ -247,28 +255,28 @@ void vCONSOLE_SerialPrint(void *pvParameters) {
 
 			switch(xConfig){
 			case ILLEGAL:
-				memcpy(pucConfigBuf, "Comando incorrecto\r\n", sizeof("Comando incorrecto\r\n"));
+				memcpy(pucPrintBuf, "Comando incorrecto\r\n", sizeof("Comando incorrecto\r\n"));
 				break;
 			case NEW_CP:
-				memcpy(pucConfigBuf, "¡CP actualizado!\r\n", sizeof("¡CP actualizado!\r\n"));
+				memcpy(pucPrintBuf, "¡CP actualizado!\r\n", sizeof("¡CP actualizado!\r\n"));
 				break;
 			case BAD_CP:
-				memcpy(pucConfigBuf, "CP fuera de rango\r\n", sizeof("CP fuera de rango\r\n"));
+				memcpy(pucPrintBuf, "CP fuera de rango\r\n", sizeof("CP fuera de rango\r\n"));
 				break;
 			case NEW_INDEX:
-				memcpy(pucConfigBuf, "¡Indice actualizado!\r\n", sizeof("¡Indice actualizado!\r\n"));
+				memcpy(pucPrintBuf, "¡Indice actualizado!\r\n", sizeof("¡Indice actualizado!\r\n"));
 				break;
 			case BAD_INDEX:
-				memcpy(pucConfigBuf, "Indice fuera de rango\r\n", sizeof("Indice fuera de rango\r\n"));
+				memcpy(pucPrintBuf, "Indice fuera de rango\r\n", sizeof("Indice fuera de rango\r\n"));
 				break;
 			case NEW_CODE:
-				memcpy(pucConfigBuf, "¡Codigo guardado!\r\n", sizeof("¡Codigo guardado!\r\n"));
+				memcpy(pucPrintBuf, "¡Codigo guardado!\r\n", sizeof("¡Codigo guardado!\r\n"));
 				break;
 			case DISCARD_CODE:
-				memcpy(pucConfigBuf, "Codigo descartado\r\n", sizeof("Codigo descartado\r\n"));
+				memcpy(pucPrintBuf, "Codigo descartado\r\n", sizeof("Codigo descartado\r\n"));
 				break;
 			case RESET_STRUCT:
-				memcpy(pucConfigBuf, "¡Reseteado completo!\r\n", sizeof("¡Reseteado completo!\r\n"));
+				memcpy(pucPrintBuf, "¡Reseteado completo!\r\n", sizeof("¡Reseteado completo!\r\n"));
 				break;
 			case CODES:
 				xPrintCodes = pdTRUE;
@@ -278,7 +286,7 @@ void vCONSOLE_SerialPrint(void *pvParameters) {
 			}
 
 			if(!xPrintCodes)
-				CONSOLE_SendMessage(pucConfigBuf, strlen((char *) pucConfigBuf));
+				CONSOLE_SendMessage(pucPrintBuf, strlen((char *) pucPrintBuf));
 
 			else{
 				xSemaphoreTake(xCodesSem, portMAX_DELAY);
@@ -510,9 +518,6 @@ void vCONSOLE_SerialReceive(void *pvParameters){
 
 
 		xQueueSendToBack(xReceiver_to_Comm_Queue, &xConfig, 0);
-
-		memset(pucBuffer, '\0', (uint8_t) ulLen);
-
 	}
 
 	vTaskDelete( NULL );
@@ -547,7 +552,7 @@ void CONSOLE_ReceiveMessageCallback(volatile uint8_t *buf, uint32_t len){
 
 	receive_message_TypeDef xPack;
 
-	xPack.Buf = buf;
+	memcpy(xPack.Buf, buf, len);
 	xPack.Len = len;
 
 	xQueueSendToBackFromISR(xReciever_Queue, &xPack, &xHigherPriorityTaskWoken);

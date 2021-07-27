@@ -45,7 +45,7 @@ uint8_t DHT11_Read(void) {
 	for (j = 0; j < 8; j++) {
 		while (!(HAL_GPIO_ReadPin(dht11.port, dht11.pin)));   	// wait for the pin to go high
 
-		Delay_us(40);   											// wait for 40 us
+		Delay_us(40);   										// wait for 40 us
 
 		if (!(HAL_GPIO_ReadPin(dht11.port, dht11.pin)))   		// if the pin is low
 		{
@@ -60,12 +60,12 @@ uint8_t DHT11_Read(void) {
 
 uint8_t DHT11_getTemp(void){
 	uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
-	uint16_t SUM, RH, TEMP;
-	uint8_t Presence = 0;
+	uint16_t SUM;
 
 	DHT11_Start();
 
-	Presence = DHT11_Check_Status();
+	if (!DHT11_Check_Status())
+		Error_Handler();
 
 	Rh_byte1 = DHT11_Read();
 	Rh_byte2 = DHT11_Read();
@@ -74,13 +74,12 @@ uint8_t DHT11_getTemp(void){
 
 	SUM = DHT11_Read();
 
-	HAL_Delay(2000);
 	return Temp_byte1;
 }
 
 uint8_t DHT11_getHR(void) {
 	uint8_t Rh_byte1, Rh_byte2, Temp_byte1, Temp_byte2;
-	uint16_t SUM, RH, TEMP;
+	uint16_t SUM;
 
 	DHT11_Start();
 

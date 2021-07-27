@@ -264,6 +264,8 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
   CONSOLE_ReceiveMessageCallback(Buf, Len[0]);
 
+  memset(Buf, '\0', (uint8_t) Len);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }

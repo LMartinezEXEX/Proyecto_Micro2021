@@ -35,7 +35,9 @@ extern "C" {
 
 #define MAX_CODES 				10
 #define HR_SENSIBILITY			1
+
 #define USER_FLASH_MEMORY		0x08060000
+#define QUEUE_DEFAULT_SIZE		10
 
 typedef enum {	HR_UP,
 				HR_DOWN
@@ -53,7 +55,7 @@ typedef enum {	ILLEGAL,
 			 } userConfig_TypeDef;
 
 typedef struct {
-	uint8_t *Buf;
+	uint8_t Buf[30];
 	uint32_t Len;
 } receive_message_TypeDef;
 
