@@ -133,12 +133,12 @@ int main(void)
 
 	xHR 			= xTaskCreate(vPeriodic_get_HR, "HR", 100, NULL, 1, NULL);
 	xHRManager 		= xTaskCreate(vManage_Actions, "HRManager", 100, NULL, 2, NULL);
-	xCommunicator 	= xTaskCreate(vCONSOLE_SerialPrint, "Communicator", 300, NULL, 3, NULL);
-	xCodeManager 	= xTaskCreate(vIR_code_get, "CodeManager", 100, NULL, 3, NULL);
 	xReceiver		= xTaskCreate(vCONSOLE_SerialReceive, "Receiver", 100, NULL, 3, NULL);
-	xNewCodeSaver	= xTaskCreate(vIR_code_receive, "NewCodeSaver", 100, NULL, 4, NULL);
-	xAudioCommander = xTaskCreate(vIR_code_send, "AudioCommander", 100, NULL, 5, NULL);
-	xFlashSaver		= xTaskCreate(vFlashSaver, "FlashSaver", 100, NULL, 6, NULL);
+	xCommunicator 	= xTaskCreate(vCONSOLE_SerialPrint, "Communicator", 300, NULL, 4, NULL);
+	xCodeManager 	= xTaskCreate(vIR_code_get, "CodeManager", 100, NULL, 4, NULL);
+	xNewCodeSaver	= xTaskCreate(vIR_code_receive, "NewCodeSaver", 100, NULL, 5, NULL);
+	xAudioCommander = xTaskCreate(vIR_code_send, "AudioCommander", 100, NULL, 6, NULL);
+	xFlashSaver		= xTaskCreate(vFlashSaver, "FlashSaver", 100, NULL, 7, NULL);
 
 	if (	xHR == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY || xHRManager == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY ||
 			xCommunicator == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY || xCodeManager == errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY ||
@@ -183,18 +183,21 @@ void vPeriodic_get_HR(void *pvParameters){
 
 	uint8_t ucHR;
 
+	BaseType_t xWaitingResponse;
+
 	for(;;){
+		xWaitingResponse = xQueuePeek((QueueHandle_t) xWaitingResponseSem, (void *) NULL, (TickType_t) NULL) == pdTRUE;
 
-		vTaskSuspendAll();
-		{
-			ucHR = DHT11_getHR();
+		if(!xWaitingResponse){
+			vTaskSuspendAll();
+			{
+				ucHR = DHT11_getHR();
+			}
+			xTaskResumeAll();
+
+			xQueueSendToBack(xHR_to_Comm_Queue, &ucHR, 0);
+			xQueueSendToBack(xHR_to_HRManager_Queue, &ucHR, 0);
 		}
-		xTaskResumeAll();
-
-
-
-		xQueueSendToBack(xHR_to_Comm_Queue, &ucHR, 0);
-		xQueueSendToBack(xHR_to_HRManager_Queue, &ucHR, 0);
 
 		vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(5000));
 	}
@@ -210,21 +213,19 @@ void vCONSOLE_SerialPrint(void *pvParameters) {
 	action_TypeDef xAction;
 	uint32_t ulIR_Code;
 	userConfig_TypeDef xConfig;
-	BaseType_t xPrintCodes, xWaitingResponse;
+	BaseType_t xPrintCodes;
 
 	for(;;){
 
 		xHandle = xQueueSelectFromSet(xCommQueueSet, portMAX_DELAY);
 
-		xWaitingResponse = xQueuePeek((QueueHandle_t) xWaitingResponseSem, (void *) NULL, (TickType_t) NULL) == pdTRUE;
-
-		if( xHandle == (QueueSetMemberHandle_t) xHR_to_Comm_Queue && !xWaitingResponse) {
+		if( xHandle == (QueueSetMemberHandle_t) xHR_to_Comm_Queue) {
 			xQueueReceive(xHandle, &ucHR, 0);
 
 			sprintf(pucPrintBuf, "HR es: %u%%\r\n", ucHR);
 			CONSOLE_SendMessage(pucPrintBuf, strlen((char *) pucPrintBuf));
 		}
-		else if (xHandle == (QueueSetMemberHandle_t) xHRManager_to_Comm_Queue && !xWaitingResponse){
+		else if (xHandle == (QueueSetMemberHandle_t) xHRManager_to_Comm_Queue){
 			xQueueReceive(xHandle, &xAction, 0);
 
 			switch(xAction){
